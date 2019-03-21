@@ -12,7 +12,7 @@ CFLAGS:=-Wall -g
 # What libaries should be added.
 # libpng has to be queried since
 # it has version number of the end.
-LIBS:=-lcuda -lm -l $(shell ldconfig | grep png | head -n1 | cut -d "." -f1 | cut -d "b" -f2)
+LIBS:=-lcuda -lm -l $(shell ldconfig -p | grep png | head -n1 | cut -d "." -f1 | cut -d "b" -f2)
 
 .PHONY: all clean
 
