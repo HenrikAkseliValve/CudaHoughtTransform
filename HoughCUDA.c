@@ -9,10 +9,10 @@
 #include<fcntl.h>
 #include<string.h>
 #include<math.h>
-#include<png.h>
 #include<cuda.h>
-#include"PrintTools.h"
-
+#ifndef NO_LIBPNG
+	#include<png.h>
+#endif /* NO_LIBPNG */
 
 // Simple structure that such has
 // information about the PNG image.
@@ -46,7 +46,11 @@ typedef struct{
 // given handle to one area with out row
 // pointers.
 int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
-
+	
+	#ifdef NO_LIBPNG
+	// Since we don't have libpng we have to improwise
+	
+	#else
 	// Check the header is correct.
 	unsigned char header[8];
 	fread(header,1,8,fp);
@@ -129,13 +133,18 @@ int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 	// File given wasn't PNG file!
 
 	return 0;
+	#endif /* NO_LIBPNG */
 }
 
 // Write CUDA device memory to png file.
 int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 
-  png_structp pngstruct=png_create_write_struct(PNG_LIBPNG_VER_STRING,0,0,0);
-  if(pngstruct){
+	#ifdef NO_LIBPNG
+	// No libpng available has to improvise.
+	
+	#else
+	png_structp pngstruct=png_create_write_struct(PNG_LIBPNG_VER_STRING,0,0,0);
+	if(pngstruct){
 		png_infop pnginfo=png_create_info_struct(pngstruct);
 		if(pnginfo){
 			// Allocate temporary memory region of memory.
@@ -145,8 +154,8 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 				// Move the gpumemory
 				cuMemcpyDtoH(memory,gpumemory,sizeof(png_byte)*info->allocationsize);
 
-        // Setup longjump for libpng to return to
-        // if it encounters an error.
+        		// Setup longjump for libpng to return to
+        		// if it encounters an error.
 				if(setjmp(png_jmpbuf(pngstruct))){
 					(void)write(STDERR_FILENO,"ERROR: With in the libpng\n",26);
 					free(memory);
@@ -164,9 +173,9 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 
 				png_write_info(pngstruct,pnginfo);
 
-        for(uint32_t i=0;i<info->height;i++) png_write_row(pngstruct,memory+i*info->rowsize);
+				for(uint32_t i=0;i<info->height;i++) png_write_row(pngstruct,memory+i*info->rowsize);
 
-        png_write_end(pngstruct,pnginfo);
+				png_write_end(pngstruct,pnginfo);
 
 
 				png_free_data(pngstruct,pnginfo,PNG_FREE_ALL,-1);
@@ -179,9 +188,10 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 			png_destroy_info_struct(pngstruct,&pnginfo);
 		}
 		png_destroy_write_struct(&pngstruct,0);
-  }
+	}
 
 	return 0;
+	#endif /* NO_LIBPNG */
 }
 // Main entry to the program.
 // Does initialiation and GPU ordering.
@@ -201,7 +211,7 @@ int main(int argn,char **args){
 
 		// Which GPU to use. Defaults to first one.
 		int selectedgpu=0;
-		// NÃºmber of GPU in the system.
+		// Númber of GPU in the system.
 		int numberofgpus=0;
 		// Edge detection threshold
 		float edgethreshold=0.2;
@@ -227,7 +237,7 @@ int main(int argn,char **args){
 			// for this hought transform. Make
 			// sure that selectedgpu is less
 			// the numberofgpus.
-      if(selectedgpu<numberofgpus){
+			if(selectedgpu<numberofgpus){
 				CUdevice gpu;
 				if(cuDeviceGet(&gpu,selectedgpu)==CUDA_SUCCESS){
 
@@ -252,9 +262,10 @@ int main(int argn,char **args){
 					// Amount of threads in warp (number of threads executed simultaneously).
 					int warpsize;
 					cuDeviceGetAttribute(&warpsize,CU_DEVICE_ATTRIBUTE_WARP_SIZE,gpu);
-          // Number of processor
-          int gpuprocessors;
-          cuDeviceGetAttribute(&gpuprocessors,CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,gpu);
+			
+					// Number of processor
+					int gpuprocessors;
+					cuDeviceGetAttribute(&gpuprocessors,CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,gpu);
 
 					// Create context for GPU cpu interaction.
 					CUcontext context;
@@ -508,8 +519,8 @@ int main(int argn,char **args){
 					else write(STDERR_FILENO,"ERROR: cuCtxCreate\n",19);
 				}
 				else write(STDERR_FILENO,"ERROR: cuDeviceGet\n",20);
-      }
-      else write(STDERR_FILENO,"ERROR: selectedgpu is more of equal to number GPUs\n",54);
+			}
+			else write(STDERR_FILENO,"ERROR: selectedgpu is more of equal to number GPUs\n",54);
 		}
 		else write(STDERR_FILENO,"ERROR: cuDeviceGetCount\n",25);
 	}
