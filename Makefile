@@ -8,7 +8,7 @@ NVCC:=nvcc --compiler-bindir $(CC)
 NVCCFLAGS:= -m64 -G
 # This is a test program so debug
 # For now debug information is forced.
-CFLAGS:=-Wall -g
+CFLAGS:=-Wall -g -I.
 # What libaries should be added.
 # libpng has to be queried since
 # it has version number of the end.
