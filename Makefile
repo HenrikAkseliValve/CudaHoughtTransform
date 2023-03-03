@@ -9,6 +9,10 @@ NVCCFLAGS:= -m64 -G
 # This is a test program so debug
 # For now debug information is forced.
 CFLAGS:=-Wall -g
+# What libaries should be added.
+# libpng has to be queried since
+# it has version number of the end.
+LIBS:=-lcuda -lm -l $(shell ldconfig | grep png | head -n1 | cut -d "." -f1 | cut -d "b" -f2)
 
 .PHONY: all clean
 
@@ -27,4 +31,4 @@ Rendering.o: Rendering.cu
 	$(NVCC) $(NVCCFLAGS) --device-c -o $@ $^
 
 hough: HoughCUDA.c
-	$(CC) $(CFLAGS) -o$@ $^ -lcuda -lpng16 -lm
+	$(CC) $(CFLAGS) -o$@ $^ $(LIBS)
