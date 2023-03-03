@@ -15,7 +15,7 @@ CFLAGS:=-Wall -g
 all: libhough.fatbin hough
 
 libhough.fatbin: RGBtoGray.o Edge.o Hough.o Rendering.o
-	$(NVCC) $(NVCCFLAGS) --fatbin --device-link --generate-code=arch=compute_30,code=sm_30 --generate-code=arch=compute_32,code=sm_32 --generate-code=arch=compute_35,code=sm_35 -o $@ $^
+	$(NVCC) $(NVCCFLAGS) --fatbin --device-link --generate-code=arch=compute_30,code=sm_30 --generate-code=arch=compute_32,code=sm_32 --generate-code=arch=compute_35,code=sm_35 --generate-code=arch=compute_61,code=sm_61 -o $@ $^
 
 RGBtoGray.o: RGBtoGray.cu
 	$(NVCC) $(NVCCFLAGS) --device-c -o $@ $^
