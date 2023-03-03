@@ -30,7 +30,7 @@ __global__ void sobel(uint8_t * __restrict__ grayimage,uint8_t * __restrict__ bi
   if(0<xindex && xindex<width-1 && 0<yindex && yindex<height-1){
 
     // Horizontial mask
-    int16_t dx=0;
+    int32_t dx=0;
     dx-=grayimage[(yindex-1)*width+xindex-1];
 		dx-=2*grayimage[yindex*width+xindex-1];
 		dx-=grayimage[(yindex+1)*width+xindex-1];
@@ -38,8 +38,8 @@ __global__ void sobel(uint8_t * __restrict__ grayimage,uint8_t * __restrict__ bi
 		dx+=2*grayimage[yindex*width+xindex+1];
 		dx+=grayimage[(yindex+1)*width+xindex+1];
 
-		// Vertical mask
-		int16_t dy=0;
+    // Vertical mask
+    int32_t dy=0;
     dy-=grayimage[(yindex-1)*width+xindex-1];
 		dy-=2*grayimage[(yindex-1)*width+xindex];
 		dy-=grayimage[(yindex-1)*width+xindex+1];
@@ -50,7 +50,6 @@ __global__ void sobel(uint8_t * __restrict__ grayimage,uint8_t * __restrict__ bi
     // Approximate strength is abs(dx)+abs(dy)
     // which at biggest is 4*255+4*255=2040 so normalize
     // threshold to it.
-    // TODO: Calculate normalization of threshold!
     binaryout[yindex*width+xindex]=(abs(dx)+abs(dy)>2040*threshold);
   }
   else if(xindex==0 || yindex==0 || xindex==width || yindex==height)  binaryout[yindex*width+xindex]=0;
