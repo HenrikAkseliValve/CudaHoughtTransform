@@ -10,7 +10,7 @@ NVCCFLAGS:= -m64 -G
 # For now debug information is forced.
 CFLAGS:=-Wall -g
 # What libaries should be added.
-LIBS:=-lcuda -lm -l 
+LIBS:=-lcuda -lm 
 
 # libpng has to be queried since
 # it has version number of the end.
@@ -20,7 +20,7 @@ NO_LIBPNG?=0
 ifeq ($(NO_LIBPNG),1)
   CFLAGS+=-DNO_LIBPNG
 else
-  LIBS+=$(shell ldconfig -p | grep png | head -n1 | cut -d "." -f1 | cut -d "b" -f2)
+  LIBS+=-l $(shell ldconfig -p | grep png | head -n1 | cut -d "." -f1 | cut -d "b" -f2)
 endif
 
 .PHONY: all clean
