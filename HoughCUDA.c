@@ -1,5 +1,5 @@
 /*
-* Performs Hoght transdform given image in the
+* Performs Hought transform given image in the
 * parameters uing CUDA. To keep things simple
 * file includes copy pasted functions for
 * handling PNG files.
