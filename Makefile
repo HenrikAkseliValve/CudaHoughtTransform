@@ -13,7 +13,8 @@ CFLAGS:=-Wall -g
 LIBS:=-lcuda -lm 
 
 # libpng has to be queried since
-# it has version number of the end.
+# .so file has version number as
+# a name postfix.
 # If libpng isn't available then 
 # NO_LIBPNG has to be set to 1.
 NO_LIBPNG?=0
