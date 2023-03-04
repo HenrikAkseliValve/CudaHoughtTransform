@@ -4,15 +4,20 @@
 * file includes copy pasted functions for
 * handling PNG files.
 */
-#include<getopt.h>
-#include<unistd.h>
-#include<fcntl.h>
-#include<string.h>
-#include<math.h>
-#include<cuda.h>
+#include <getopt.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+#include <math.h>
+#include <cuda.h>
 #ifndef NO_LIBPNG
-	#include<png.h>
+	#include <png.h>
 #endif /* NO_LIBPNG */
+
+// Write constant message to the console.
+#define msg(f,s) (void)write(f,s "\n",sizeof(s)-1)
+// Write error message to the console.
+#define err(s) msg(STDERR_FILENO,"ERROR: " s "\n")
 
 // Simple structure that such has
 // information about the PNG image.
@@ -65,7 +70,7 @@ int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 				// Do I really need to setjmp.
 				// Yes and no. libpng has to be compiled with with PNG_NO_SETJMP to not have to do this.
 				if(setjmp(png_jmpbuf(pngstruct))){
-					(void)write(STDERR_FILENO,"ERROR: With in the libpng\n",26);
+					err("With in the libpng!");
 					// This command destroyies both pngstruct and pnginfo.
 					png_destroy_read_struct(&pngstruct,&pnginfo,0);
 					return 0;
@@ -115,10 +120,10 @@ int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 						_jmp_ERROR_EXIT:
 						free(memory);
 					}
-					else (void)write(STDERR_FILENO,"ERROR: pngRead | malloc\n",26);
+					else err("pngRead | malloc!");
 					cuMemFree(*gpumemory);
 				}
-				else (void)write(STDERR_FILENO,"ERROR: pngRead | cuMemAlloc\n",28);
+				else err("pngRead | cuMemAlloc!");
 
 				// Destyroy info structure now so that next we can destroy
 				// the png_struct.
@@ -157,7 +162,7 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
         		// Setup longjump for libpng to return to
         		// if it encounters an error.
 				if(setjmp(png_jmpbuf(pngstruct))){
-					(void)write(STDERR_FILENO,"ERROR: With in the libpng\n",26);
+					err("With in the libpng!");
 					free(memory);
 					png_destroy_write_struct(&pngstruct,&pnginfo);
 					return 0;
@@ -184,7 +189,7 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 
 				return 1;
 			}
-			else (void)write(STDERR_FILENO,"ERROR: pngWrite | malloc\n",33);
+			else err("pngWrite | malloc!");
 			png_destroy_info_struct(pngstruct,&pnginfo);
 		}
 		png_destroy_write_struct(&pngstruct,0);
@@ -315,13 +320,13 @@ int main(int argn,char **args){
 																	void *args[]={&image,&grayimage,&pnginfo.width,&pnginfo.height,0};
 
 																	if(cuLaunchKernel(rgbtograykernel,gridx,gridy,1,blockx,blocky,1,0,0,args,0)!=CUDA_SUCCESS){
-																		(void)write(STDERR_FILENO,"ERROR: cuLaunchKernel | grayimage\n",35);
+																		err("cuLaunchKernel | grayimage!");
 																		goto jmp_SAFE_EXIT_GRAYIMAGE;
 																	}
 
 																}
 																else{
-																	(void)write(STDERR_FILENO,"ERROR: cuMemAlloc | grayimage\n",30);
+																	err("cuMemAlloc | grayimage!");
 																	goto jmp_SAFE_EXIT_GRAYIMAGE;
 																}
 																break;
@@ -446,44 +451,44 @@ int main(int argn,char **args){
 																											fclose(wfd);
 
 																										}
-																										else (void)write(STDOUT_FILENO,"ERROR: cuLaunchKernel | renderLines\n",36);
+																										else err("cuLaunchKernel | renderLines!");
 																										cuMemFree(finalimage);
 																									}
-																									else (void)write(STDOUT_FILENO,"ERROR: cuMemAlloc | finalimage\n",33);
+																									else err("cuMemAlloc | finalimage!");
 																									cuMemFree(lineparameters);
 																								}
-																								else (void)write(STDOUT_FILENO,"ERROR: cuMemAlloc | lineparameters\n",37);
+																								else err("cuMemAlloc | lineparameters!");
 																								free(hostlineparameters);
 																							}
-																							else (void)write(STDOUT_FILENO,"ERROR: malloc failled!\n",23);
+																							else err("malloc failled!");
 																							free(accumulatorhost);
 																						}
-																						else (void)write(STDOUT_FILENO,"ERROR: malloc failled!\n",23);
+																						else err("malloc failled!");
 																					}
-																					else (void)write(STDOUT_FILENO,"ERROR: cuLaunchKernel | hough\n",30);
+																					else err("cuLaunchKernel | hough!");
 																				}
 																			}
 																		}
 																		else{
 																			free(deviceedgelist);
 																			free(edgeimagedevice);
-																			(void)write(STDOUT_FILENO,"No edge pixel found\n",20);
+																			err("No edge pixel found!");
 																		}
 																	}
 																	else{
 																		free(deviceedgelist);
-																		(void)write(STDOUT_FILENO,"ERROR: malloc failled!\n",23);
+																		err("malloc failled!");
 																	}
 																}
-																else (void)write(STDOUT_FILENO,"ERROR: malloc failled!\n",23);
+																else err("malloc failled!");
 
 															}
 															else{
 																cuMemFree(binedge);
-																(void)write(STDERR_FILENO,"ERROR: cuLaunchKernel | sobelkernel\n",36);
+																err("cuLaunchKernel | sobelkernel!");
 															}
 														}
-														else (void)write(STDERR_FILENO,"ERROR: cuMemAlloc | binedge\n",28);
+														else err("cuMemAlloc | binedge!");
 
 														// Program jumps here if rgbToGray
 														// errors for some reason.
@@ -500,31 +505,31 @@ int main(int argn,char **args){
 												else fprintf(stderr,"\nPNG read error happened to \"%s\"!\n      Program continues despite this!\n",file);
 											}
 										}
-										else (void)write(STDERR_FILENO,"ERROR: Kernel | renderLines\n",28);
+										else err("Kernel | renderLines!");
 									}
-									else (void)write(STDERR_FILENO,"ERROR: Kernel | houghline\n",26);
+									else err("Kernel | houghline!");
 								}
-								else (void)write(STDERR_FILENO,"ERROR: Kernel | sobel\n",22);
+								else err("Kernel | sobel!");
 							}
-							else (void)write(STDERR_FILENO,"ERROR: Kernel | rgbToGray\n",26);
+							else err("Kernel | rgbToGray!");
 
 							// Unload the module
 							cuModuleUnload(libhough);
 						}
-						else (void)write(STDERR_FILENO,"ERROR: cuModuleLoad | libhough\n",31);
+						else err("cuModuleLoad | libhough!");
 
 						// Since loop is behind us just destroy the GPU context.
 						cuCtxDestroy(context);
 					}
-					else write(STDERR_FILENO,"ERROR: cuCtxCreate\n",19);
+					else err("cuCtxCreate!");
 				}
-				else write(STDERR_FILENO,"ERROR: cuDeviceGet\n",20);
+				else err("cuDeviceGet!");
 			}
-			else write(STDERR_FILENO,"ERROR: selectedgpu is more of equal to number GPUs\n",54);
+			else err("selectedgpu is more of equal to number GPUs!");
 		}
-		else write(STDERR_FILENO,"ERROR: cuDeviceGetCount\n",25);
+		else err("cuDeviceGetCount!");
 	}
-	else write(STDERR_FILENO,"ERROR: cuInit\n",14);
+	else err("cuInit!");
 
 	return 0;
 }
