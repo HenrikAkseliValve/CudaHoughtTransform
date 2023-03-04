@@ -17,12 +17,12 @@ __global__ void rgbToGray(uint8_t * __restrict__ image,uint8_t * __restrict__ im
 	// time to deal with that.
 	// http://www.libpng.org/pub/png/libpng-manual.txt
 
-  uint32_t xindex=blockIdx.x*blockDim.x+threadIdx.x;
-  uint32_t yindex=blockIdx.y*blockDim.y+threadIdx.y;
+	uint32_t xindex=blockIdx.x*blockDim.x+threadIdx.x;
+	uint32_t yindex=blockIdx.y*blockDim.y+threadIdx.y;
 
-  if(xindex<width && yindex<height){
-  	// Index to the pixel.
-  	uint32_t index=yindex*width+xindex;
+	if(xindex<width && yindex<height){
+		// Index to the pixel.
+		uint32_t index=yindex*width+xindex;
 		imageout[index]=(6968*image[index*3+0]+23434*image[index*3+1]+2366*image[index*3+2])/32768;
 	}
 

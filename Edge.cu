@@ -23,36 +23,36 @@ extern "C"{
 // Source: http://www.aishack.in/tutorials/sobel-laplacian-edge-detectors/
 __global__ void sobel(uint8_t * __restrict__ grayimage,uint8_t * __restrict__ binaryout,uint32_t width,uint32_t height,float threshold){
 
-  uint32_t xindex=blockIdx.x*blockDim.x+threadIdx.x;
-  uint32_t yindex=blockIdx.y*blockDim.y+threadIdx.y;
+	uint32_t xindex=blockIdx.x*blockDim.x+threadIdx.x;
+	uint32_t yindex=blockIdx.y*blockDim.y+threadIdx.y;
 
-  // Check that we aren't at the border pixel or outside of the image.
-  if(0<xindex && xindex<width-1 && 0<yindex && yindex<height-1){
+	// Check that we aren't at the border pixel or outside of the image.
+	if(0<xindex && xindex<width-1 && 0<yindex && yindex<height-1){
 
-    // Horizontial mask
-    int32_t dx=0;
-    dx-=grayimage[(yindex-1)*width+xindex-1];
+		// Horizontial mask
+		int32_t dx=0;
+		dx-=grayimage[(yindex-1)*width+xindex-1];
 		dx-=2*grayimage[yindex*width+xindex-1];
 		dx-=grayimage[(yindex+1)*width+xindex-1];
 		dx+=grayimage[(yindex-1)*width+xindex+1];
 		dx+=2*grayimage[yindex*width+xindex+1];
 		dx+=grayimage[(yindex+1)*width+xindex+1];
 
-    // Vertical mask
-    int32_t dy=0;
-    dy-=grayimage[(yindex-1)*width+xindex-1];
+		// Vertical mask
+		int32_t dy=0;
+		dy-=grayimage[(yindex-1)*width+xindex-1];
 		dy-=2*grayimage[(yindex-1)*width+xindex];
 		dy-=grayimage[(yindex-1)*width+xindex+1];
 		dy+=grayimage[(yindex+1)*width+xindex-1];
 		dy+=2*grayimage[(yindex+1)*width+xindex];
 		dy+=grayimage[(yindex+1)*width+xindex+1];
 
-    // Approximate strength is abs(dx)+abs(dy)
-    // which at biggest is 4*255+4*255=2040 so normalize
-    // threshold to it.
-    binaryout[yindex*width+xindex]=(abs(dx)+abs(dy)>2040*threshold);
-  }
-  else if(xindex==0 || yindex==0 || xindex==width || yindex==height)  binaryout[yindex*width+xindex]=0;
+		// Approximate strength is abs(dx)+abs(dy)
+		// which at biggest is 4*255+4*255=2040 so normalize
+		// threshold to it.
+		binaryout[yindex*width+xindex]=(abs(dx)+abs(dy)>2040*threshold);
+	}
+	else if(xindex==0 || yindex==0 || xindex==width || yindex==height)  binaryout[yindex*width+xindex]=0;
 }
 
 // Bullhock extern "C" end...

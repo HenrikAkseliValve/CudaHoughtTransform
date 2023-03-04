@@ -159,8 +159,8 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 				// Move the gpumemory
 				cuMemcpyDtoH(memory,gpumemory,sizeof(png_byte)*info->allocationsize);
 
-        		// Setup longjump for libpng to return to
-        		// if it encounters an error.
+				// Setup longjump for libpng to return to
+				// if it encounters an error.
 				if(setjmp(png_jmpbuf(pngstruct))){
 					err("With in the libpng!");
 					free(memory);
@@ -181,7 +181,6 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 				for(uint32_t i=0;i<info->height;i++) png_write_row(pngstruct,memory+i*info->rowsize);
 
 				png_write_end(pngstruct,pnginfo);
-
 
 				png_free_data(pngstruct,pnginfo,PNG_FREE_ALL,-1);
 				png_destroy_write_struct(&pngstruct,&pnginfo);
@@ -211,7 +210,7 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 int main(int argn,char **args){
 
 	// Initialization function for CUDA.
-  // Flag is zero since it has to be!
+	// Flag is zero since it has to be!
 	if(cuInit(0)==CUDA_SUCCESS){
 
 		// Which GPU to use. Defaults to first one.
@@ -267,7 +266,7 @@ int main(int argn,char **args){
 					// Amount of threads in warp (number of threads executed simultaneously).
 					int warpsize;
 					cuDeviceGetAttribute(&warpsize,CU_DEVICE_ATTRIBUTE_WARP_SIZE,gpu);
-			
+
 					// Number of processor
 					int gpuprocessors;
 					cuDeviceGetAttribute(&gpuprocessors,CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,gpu);

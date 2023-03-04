@@ -52,7 +52,7 @@ __global__ void houghLine(uint32_t *edgelist,uint32_t edgelistcount,uint32_t *ac
 			//	x=floor(x/radiusd+1/2);
 			uint32_t radiusindex=(uint32_t)(realradius/radiusd+1/2);
 
-      atomicAdd(accumulator+(radiusindex*angleticks+angleoff),1);
+			atomicAdd(accumulator+(radiusindex*angleticks+angleoff),1);
 
 		}
 
