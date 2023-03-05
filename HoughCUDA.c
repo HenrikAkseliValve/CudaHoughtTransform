@@ -6,6 +6,7 @@
 */
 #include <getopt.h>
 #include <unistd.h>
+#include <sys/uio.h>
 #include <fcntl.h>
 #include <string.h>
 #include <math.h>
@@ -15,9 +16,17 @@
 #endif /* NO_LIBPNG */
 
 // Write constant message to the console.
-#define msg(f,s) (void)write(f,s "\n",sizeof(s)-1)
-// Write error message to the console.
-#define err(s) msg(STDERR_FILENO,"ERROR: " s "\n")
+#define msg(f,s) (void)write(f,s "\n",sizeof(s))
+// Write constant error message to the console.
+#define err(s) msg(STDERR_FILENO,"ERROR: " s)
+// Write error message and CUDA error code to the console.
+#define errcuda(s,e) {\
+	err(s); \
+	const char *str; \
+	cuGetErrorName(e,&str); \
+	struct iovec vecs[2]={{.iov_base=(char*)str,.iov_len=strlen(str)},{.iov_base="\n",.iov_len=1}}; \
+	(void)writev(STDERR_FILENO,vecs,2); \
+}
 
 // Simple structure that such has
 // information about the PNG image.
@@ -53,7 +62,7 @@ typedef struct{
 int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 	
 	#ifdef NO_LIBPNG
-	// Since we don't have libpng we have to improwise
+	// Since we don't have libpng we have to improvise
 	
 	#else
 	// Check the header is correct.
@@ -71,7 +80,7 @@ int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 				// Yes and no. libpng has to be compiled with with PNG_NO_SETJMP to not have to do this.
 				if(setjmp(png_jmpbuf(pngstruct))){
 					err("With in the libpng!");
-					// This command destroyies both pngstruct and pnginfo.
+					// This command destroys both pngstruct and pnginfo.
 					png_destroy_read_struct(&pngstruct,&pnginfo,0);
 					return 0;
 				}
@@ -160,7 +169,7 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 				cuMemcpyDtoH(memory,gpumemory,sizeof(png_byte)*info->allocationsize);
 
 				// Setup longjump for libpng to return to
-				// if it encounters an error.
+				// if it encounters an error.git 
 				if(setjmp(png_jmpbuf(pngstruct))){
 					err("With in the libpng!");
 					free(memory);
@@ -209,9 +218,13 @@ int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 //
 int main(int argn,char **args){
 
+	// Do get more knowledgable abouts errors have general
+	// CUResult capture.
+	CUresult ecode;
+
 	// Initialization function for CUDA.
 	// Flag is zero since it has to be!
-	if(cuInit(0)==CUDA_SUCCESS){
+	if((ecode=cuInit(0))==CUDA_SUCCESS){
 
 		// Which GPU to use. Defaults to first one.
 		int selectedgpu=0;
@@ -219,7 +232,7 @@ int main(int argn,char **args){
 		int numberofgpus=0;
 		// Edge detection threshold
 		float edgethreshold=0.2;
-		if(cuDeviceGetCount(&numberofgpus)==CUDA_SUCCESS){
+		if((ecode=cuDeviceGetCount(&numberofgpus))==CUDA_SUCCESS){
 
 			// Handle Arguments with getopt.
 			// For simplicity don't use long options.
@@ -243,7 +256,7 @@ int main(int argn,char **args){
 			// the numberofgpus.
 			if(selectedgpu<numberofgpus){
 				CUdevice gpu;
-				if(cuDeviceGet(&gpu,selectedgpu)==CUDA_SUCCESS){
+				if((ecode=cuDeviceGet(&gpu,selectedgpu))==CUDA_SUCCESS){
 
 					// Maximum number threads.
 					int maxthreads;
@@ -278,15 +291,15 @@ int main(int argn,char **args){
 						// Load the "shared library" which has GPU code and
 						// "get address" to functions.
 						CUmodule libhough;
-						if(cuModuleLoad(&libhough,"libhough.fatbin")==CUDA_SUCCESS){
+						if((ecode=cuModuleLoad(&libhough,"libhough.fatbin"))==CUDA_SUCCESS){
 							CUfunction rgbtograykernel;
-							if(cuModuleGetFunction(&rgbtograykernel,libhough,"rgbToGray")==CUDA_SUCCESS){
+							if((ecode=cuModuleGetFunction(&rgbtograykernel,libhough,"rgbToGray"))==CUDA_SUCCESS){
 								CUfunction sobelkernel;
-								if(cuModuleGetFunction(&sobelkernel,libhough,"sobel")==CUDA_SUCCESS){
+								if((ecode=cuModuleGetFunction(&sobelkernel,libhough,"sobel"))==CUDA_SUCCESS){
 									CUfunction houghlinekernel;
-									if(cuModuleGetFunction(&houghlinekernel,libhough,"houghLine")==CUDA_SUCCESS){
+									if((ecode=cuModuleGetFunction(&houghlinekernel,libhough,"houghLine"))==CUDA_SUCCESS){
 										CUfunction renderlineskernel;
-										if(cuModuleGetFunction(&renderlineskernel,libhough,"renderLinesPolar")==CUDA_SUCCESS){
+										if((ecode=cuModuleGetFunction(&renderlineskernel,libhough,"renderLinesPolar"))==CUDA_SUCCESS){
 
 											// LOAD THE IMAGE LOOP
 											// Loop for over every PNG image.
@@ -313,7 +326,7 @@ int main(int argn,char **args){
 														CUdeviceptr grayimage;
 														switch(pnginfo.colortype){
 															case PNG_COLOR_TYPE_RGB:
-																if(cuMemAlloc(&grayimage,pnginfo.width*pnginfo.height)==CUDA_SUCCESS){
+																if((ecode=cuMemAlloc(&grayimage,pnginfo.width*pnginfo.height))==CUDA_SUCCESS){
 
 																	// Execute RGB to Gray kernel to get gray.
 																	void *args[]={&image,&grayimage,&pnginfo.width,&pnginfo.height,0};
@@ -341,13 +354,12 @@ int main(int argn,char **args){
 														// Run Egde detection. Output will be list of indexes (y*width+x)
 														// and number memory allocated for that list is used.
 														CUdeviceptr binedge;
-														if(cuMemAlloc(&binedge,pnginfo.width*pnginfo.height*sizeof(uint8_t))==CUDA_SUCCESS){
-															CUresult result;
+														if((ecode=cuMemAlloc(&binedge,pnginfo.width*pnginfo.height*sizeof(uint8_t)))==CUDA_SUCCESS){
 															{
 																void *args[]={&grayimage,&binedge,&pnginfo.width,&pnginfo.height,&edgethreshold,0};
-																result=cuLaunchKernel(sobelkernel,gridx,gridy,1,blockx,blocky,1,0,0,args,0);
+																ecode=cuLaunchKernel(sobelkernel,gridx,gridy,1,blockx,blocky,1,0,0,args,0);
 															}
-															if(result==CUDA_SUCCESS){
+															if(ecode==CUDA_SUCCESS){
 
 																// Make edge list from grayimage manually on CPU since we have to
 																// count up which isn't easy to do.
@@ -376,7 +388,7 @@ int main(int argn,char **args){
 																		if(edgelistcount>warpsize*2){
 
 																			CUdeviceptr edgelist;
-																			if(cuMemAlloc(&edgelist,sizeof(uint32_t)*edgelistcount)==CUDA_SUCCESS){
+																			if((ecode=cuMemAlloc(&edgelist,sizeof(uint32_t)*edgelistcount))==CUDA_SUCCESS){
 																				free(deviceedgelist);
 																				free(edgeimagedevice);
 
@@ -402,9 +414,9 @@ int main(int argn,char **args){
 																					// Use only dimension as input is index list.
 																					{
 																						void *args[]={&edgelist,&edgelistcount,&accumulator,&angled,&radiusd,&angleticks,&radiusticks,0};
-																						result=cuLaunchKernel(houghlinekernel,(edgelistcount/warpsize)+(edgelistcount%warpsize>0),1,1,warpsize,1,1,0,0,args,0);
+																						ecode=cuLaunchKernel(houghlinekernel,(edgelistcount/warpsize)+(edgelistcount%warpsize>0),1,1,warpsize,1,1,0,0,args,0);
 																					}
-																					if(result==CUDA_SUCCESS){
+																					if(ecode==CUDA_SUCCESS){
 
 																						// Collect information for render the lines.
 																						uint32_t *accumulatorhost=malloc(sizeof(uint32_t)*angleticks*radiusticks);
@@ -427,17 +439,17 @@ int main(int argn,char **args){
 
 																								// Allocate memory for making lines images.
 																								CUdeviceptr lineparameters;
-																								if(cuMemAlloc(&lineparameters,sizeof(uint32_t)*peakcount)==CUDA_SUCCESS){
+																								if((ecode=cuMemAlloc(&lineparameters,sizeof(uint32_t)*peakcount))==CUDA_SUCCESS){
 																									cuMemcpyHtoD(lineparameters,hostlineparameters,sizeof(uint32_t)*peakcount);
 																									CUdeviceptr finalimage;
-																									if(cuMemAlloc(&finalimage,pnginfo.width*pnginfo.height)==CUDA_SUCCESS){
+																									if((ecode=cuMemAlloc(&finalimage,pnginfo.width*pnginfo.height))==CUDA_SUCCESS){
 																										cuMemsetD8(finalimage,0,pnginfo.width*pnginfo.height);
 																										// Give rendering information.
 																										{
 																											void *args[]={&lineparameters,&peakcount,&finalimage,&pnginfo.width,&pnginfo.height,&angled,&radiusd};
-																											result=cuLaunchKernel(renderlineskernel,peakcount/warpsize+(peakcount%warpsize>0),1,1,warpsize,1,1,0,0,args,0);
+																											ecode=cuLaunchKernel(renderlineskernel,peakcount/warpsize+(peakcount%warpsize>0),1,1,warpsize,1,1,0,0,args,0);
 																										}
-																										if(result==CUDA_SUCCESS){
+																										if(ecode==CUDA_SUCCESS){
 
 																											// Make sure image to be written out is gray image with 8 bit channel.
 																											pnginfo.allocationsize=pnginfo.width*pnginfo.height;
@@ -450,13 +462,13 @@ int main(int argn,char **args){
 																											fclose(wfd);
 
 																										}
-																										else err("cuLaunchKernel | renderLines!");
+																										else errcuda("cuLaunchKernel | renderLines!",ecode);
 																										cuMemFree(finalimage);
 																									}
-																									else err("cuMemAlloc | finalimage!");
+																									else errcuda("cuMemAlloc | finalimage!",ecode);
 																									cuMemFree(lineparameters);
 																								}
-																								else err("cuMemAlloc | lineparameters!");
+																								else errcuda("cuMemAlloc | lineparameters!",ecode);
 																								free(hostlineparameters);
 																							}
 																							else err("malloc failled!");
@@ -464,9 +476,10 @@ int main(int argn,char **args){
 																						}
 																						else err("malloc failled!");
 																					}
-																					else err("cuLaunchKernel | hough!");
+																					else errcuda("cuLaunchKernel | hough!",ecode);
 																				}
 																			}
+																			else errcuda("cuMemAlloc | edge allocation!",ecode);
 																		}
 																		else{
 																			free(deviceedgelist);
@@ -484,10 +497,10 @@ int main(int argn,char **args){
 															}
 															else{
 																cuMemFree(binedge);
-																err("cuLaunchKernel | sobelkernel!");
+																errcuda("cuLaunchKernel | sobelkernel!",ecode);
 															}
 														}
-														else err("cuMemAlloc | binedge!");
+														else errcuda("cuMemAlloc | binedge!",ecode);
 
 														// Program jumps here if rgbToGray
 														// errors for some reason.
@@ -504,31 +517,31 @@ int main(int argn,char **args){
 												else fprintf(stderr,"\nPNG read error happened to \"%s\"!\n      Program continues despite this!\n",file);
 											}
 										}
-										else err("Kernel | renderLines!");
+										else errcuda("Kernel | renderLines!",ecode);
 									}
-									else err("Kernel | houghline!");
+									else errcuda("Kernel | houghline!",ecode);
 								}
-								else err("Kernel | sobel!");
+								else errcuda("Kernel | sobel!",ecode);
 							}
-							else err("Kernel | rgbToGray!");
+							else errcuda("Kernel | rgbToGray!",ecode);
 
 							// Unload the module
 							cuModuleUnload(libhough);
 						}
-						else err("cuModuleLoad | libhough!");
+						else errcuda("cuModuleLoad | libhough!",ecode);
 
 						// Since loop is behind us just destroy the GPU context.
 						cuCtxDestroy(context);
 					}
-					else err("cuCtxCreate!");
+					else errcuda("cuCtxCreate!",ecode);
 				}
-				else err("cuDeviceGet!");
+				else errcuda("cuDeviceGet!",ecode);
 			}
 			else err("selectedgpu is more of equal to number GPUs!");
 		}
-		else err("cuDeviceGetCount!");
+		else errcuda("cuDeviceGetCount!",ecode);
 	}
-	else err("cuInit!");
+	else errcuda("cuInit!",ecode);
 
 	return 0;
 }
