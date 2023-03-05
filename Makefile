@@ -3,9 +3,11 @@
 # Compiler used for c files
 CC=gcc
 # Compilers used for cu files
-NVCC:=nvcc --compiler-bindir $(CC)
-# Compilation flags
-NVCCFLAGS:= -m64 -G
+NVCC:=nvcc
+# --compiler-bindir $(CC)
+# Compilation flags 
+#  -G generates debug information.
+NVCCFLAGS:= -G -arch=native
 # This is a test program so debug
 # For now debug information is forced.
 CFLAGS:=-Wall -g
@@ -21,15 +23,15 @@ NO_LIBPNG?=0
 ifeq ($(NO_LIBPNG),1)
   CFLAGS+=-DNO_LIBPNG
 else
-  LIBS+=-l $(shell ldconfig -p | grep png | head -n1 | cut -d "." -f1 | cut -d "b" -f2)
+  LIBS+=-l$(shell ldconfig -p | grep png | head -n1 | cut -d "." -f1 | cut -d "b" -f2)
 endif
 
 .PHONY: all clean
 
-all: libhough.fatbin hough
+all: libhough.cubin hough
 
-libhough.fatbin: RGBtoGray.o Edge.o Hough.o Rendering.o
-	$(NVCC) $(NVCCFLAGS) --fatbin --device-link --generate-code=arch=compute_30,code=sm_30 --generate-code=arch=compute_32,code=sm_32 --generate-code=arch=compute_35,code=sm_35 --generate-code=arch=compute_61,code=sm_61 -o $@ $^
+libhough.cubin: RGBtoGray.o Edge.o Hough.o Rendering.o
+	$(NVCC) $(NVCCFLAGS) --cubin --device-link -o $@ $^
 
 RGBtoGray.o: RGBtoGray.cu
 	$(NVCC) $(NVCCFLAGS) --device-c -o $@ $^

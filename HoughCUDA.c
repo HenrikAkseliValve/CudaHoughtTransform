@@ -291,7 +291,7 @@ int main(int argn,char **args){
 						// Load the "shared library" which has GPU code and
 						// "get address" to functions.
 						CUmodule libhough;
-						if((ecode=cuModuleLoad(&libhough,"libhough.fatbin"))==CUDA_SUCCESS){
+						if((ecode=cuModuleLoad(&libhough,"libhough.cubin"))==CUDA_SUCCESS){
 							CUfunction rgbtograykernel;
 							if((ecode=cuModuleGetFunction(&rgbtograykernel,libhough,"rgbToGray"))==CUDA_SUCCESS){
 								CUfunction sobelkernel;
