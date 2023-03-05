@@ -1,3 +1,5 @@
 *.o
 hough
 *.fatbin
+*.cubin
+*.ptx
