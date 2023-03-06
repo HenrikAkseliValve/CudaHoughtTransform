@@ -9,6 +9,7 @@
 #include <sys/uio.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdbool.h>
 #include <math.h>
 #include <cuda.h>
 #ifndef NO_LIBPNG
@@ -46,9 +47,9 @@
 typedef struct{
 	png_uint_32 width;
 	png_uint_32 height;
-  uint32_t special;
-  uint32_t allocationsize;
-  int colortype;
+	uint32_t special;
+	uint32_t allocationsize;
+	int colortype;
 	int bitdepth;
 	int interlace;
 	int compression;
@@ -102,6 +103,8 @@ int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 
 				png->rowsize = png_get_rowbytes(pngstruct,pnginfo);
 				png->allocationsize=png->rowsize*png->height;
+				// If image is RGB allocation times 3.
+				if(png->colortype==PNG_COLOR_TYPE_RGB) png->allocationsize*=3;
 
 				// Allocate memory for the image.
 				if(cuMemAlloc(gpumemory,png->allocationsize)==CUDA_SUCCESS){
@@ -125,7 +128,7 @@ int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 							return 1;
 						}
 
-						// Jump here happens if long jump from
+						// Jump here happens if long jump from PNG error.
 						_jmp_ERROR_EXIT:
 						free(memory);
 					}
@@ -149,61 +152,73 @@ int pngRead(PngInfo *png,CUdeviceptr *gpumemory,FILE *fp){
 	return 0;
 	#endif /* NO_LIBPNG */
 }
+// Write host memory image to PNG file.
+int pngWriteHost(const PngInfo *info,const png_bytep memory,FILE *fp){
+	
+	png_structp pngstruct=png_create_write_struct(PNG_LIBPNG_VER_STRING,0,0,0);
+	if(!pngstruct) return 0;
+	
+	png_infop pnginfo=png_create_info_struct(pngstruct);
+	if(!pnginfo){
+		png_destroy_write_struct(&pngstruct,0);
+		return 0;
+	}
+		
+	// Setup longjump for libpng to return to
+	// if it encounters an error.
+	if(setjmp(png_jmpbuf(pngstruct))){
+		err("With in the libpng!");
+		png_destroy_write_struct(&pngstruct,&pnginfo);
+		return 0;
+	}
+	
+	// Default underline behavior.
+	png_init_io(pngstruct,fp);
 
-// Write CUDA device memory to png file.
+	// Write header.
+	// Parameters are:
+	// Width,height,bit depth,color type,interlace type,compression type,filter type
+	png_set_IHDR(pngstruct,pnginfo,info->width,info->height,info->bitdepth,info->colortype,info->interlace,info->compression,info->filter);
+
+	png_write_info(pngstruct,pnginfo);
+
+	for(uint32_t i=0;i<info->height;i++) png_write_row(pngstruct,memory+i*info->rowsize);
+
+	png_write_end(pngstruct,pnginfo);
+
+	// Free Libpng write resources.
+	png_free_data(pngstruct,pnginfo,PNG_FREE_ALL,-1);
+	png_destroy_info_struct(pngstruct,&pnginfo);
+	png_destroy_write_struct(&pngstruct,0);
+	
+	return 1;
+}
+
+// Write CUDA device memory to PNG file.
 int pngWrite(const PngInfo *info,const CUdeviceptr gpumemory,FILE *fp){
 
 	#ifdef NO_LIBPNG
 	// No libpng available has to improvise.
 	
 	#else
-	png_structp pngstruct=png_create_write_struct(PNG_LIBPNG_VER_STRING,0,0,0);
-	if(pngstruct){
-		png_infop pnginfo=png_create_info_struct(pngstruct);
-		if(pnginfo){
-			// Allocate temporary memory region of memory.
-			png_bytep memory=malloc(sizeof(png_byte)*info->allocationsize);
-			if(memory){
+	
+	// Allocate temporary memory region of memory.
+	png_bytep memory=malloc(sizeof(png_byte)*info->allocationsize);
+	if(memory){
 
-				// Move the gpumemory
-				cuMemcpyDtoH(memory,gpumemory,sizeof(png_byte)*info->allocationsize);
+		// Move the gpumemory
+		cuMemcpyDtoH(memory,gpumemory,sizeof(png_byte)*info->allocationsize);
 
-				// Setup longjump for libpng to return to
-				// if it encounters an error.git 
-				if(setjmp(png_jmpbuf(pngstruct))){
-					err("With in the libpng!");
-					free(memory);
-					png_destroy_write_struct(&pngstruct,&pnginfo);
-					return 0;
-				}
-
-				// Default underline behavior.
-				png_init_io(pngstruct,fp);
-
-				// Write header.
-				// Parameters are:
-				// Width,height,bit depth,color type,interlace type,compression type,filter type
-				png_set_IHDR(pngstruct,pnginfo,info->width,info->height,info->bitdepth,info->colortype,info->interlace,info->compression,info->filter);
-
-				png_write_info(pngstruct,pnginfo);
-
-				for(uint32_t i=0;i<info->height;i++) png_write_row(pngstruct,memory+i*info->rowsize);
-
-				png_write_end(pngstruct,pnginfo);
-
-				png_free_data(pngstruct,pnginfo,PNG_FREE_ALL,-1);
-				png_destroy_write_struct(&pngstruct,&pnginfo);
-				free(memory);
-
-				return 1;
-			}
-			else err("pngWrite | malloc!");
-			png_destroy_info_struct(pngstruct,&pnginfo);
-		}
-		png_destroy_write_struct(&pngstruct,0);
+		int result=pngWriteHost(info,memory,fp);
+		
+		free(memory);
+		
+		return result;
 	}
-
+	else err("pngWrite | malloc!");
 	return 0;
+	
+
 	#endif /* NO_LIBPNG */
 }
 // Main entry to the program.
@@ -222,6 +237,12 @@ int main(int argn,char **args){
 	// CUResult capture.
 	CUresult ecode;
 
+	// Debugging flags.
+	struct{
+		bool gray:1;
+		bool edge:1;
+	}debugflags={false,false};
+
 	// Initialization function for CUDA.
 	// Flag is zero since it has to be!
 	if((ecode=cuInit(0))==CUDA_SUCCESS){
@@ -238,14 +259,35 @@ int main(int argn,char **args){
 			// For simplicity don't use long options.
 			{
 				int c;
-				while((c=getopt(argn,args,"g:"))!=-1){
+				while((c=getopt(argn,args,"hg:e:d:"))!=-1){
 					switch(c){
+						case 'h':
+							msg(STDOUT_FILENO,"Usage: hough [options] <PNG file>\n\n"
+							                  "Options:\n"
+							                  "\t-g <integer> select GPU.\n"
+							                  "\t-e <float> give edge threshold (between 0 and 1).\n"
+							                  "\t-d <value> debug output.Possible values:\n"
+							                  "\t\tgray\twrite colour to gray conversion image.\n"
+							                  "\t\tedge\twrite edge detection image."
+							);
+							break;
 						case 'g':
 							selectedgpu=atoi(optarg);
 							break;
 						case 'e':
 							edgethreshold=atof(optarg);
 							break;
+						case 'd':
+							if(strcmp(optarg,"gray")==0){
+								debugflags.gray=true;
+							}
+							else if(strcmp(optarg,"edge")==0){
+								debugflags.edge=true;
+							}
+							else{
+								err("Unknown value for debugging");
+								return 0;
+							}
 					}
 				}
 			}
@@ -331,14 +373,32 @@ int main(int argn,char **args){
 																	// Execute RGB to Gray kernel to get gray.
 																	void *args[]={&image,&grayimage,&pnginfo.width,&pnginfo.height,0};
 
-																	if(cuLaunchKernel(rgbtograykernel,gridx,gridy,1,blockx,blocky,1,0,0,args,0)!=CUDA_SUCCESS){
-																		err("cuLaunchKernel | grayimage!");
+																	if((ecode=cuLaunchKernel(rgbtograykernel,gridx,gridy,1,blockx,blocky,1,0,0,args,0))!=CUDA_SUCCESS){
+																		errcuda("cuLaunchKernel | grayimage!",ecode);
 																		goto jmp_SAFE_EXIT_GRAYIMAGE;
+																	}
+																	
+																	// Do user want to write gray image as debug.
+																	if(debugflags.gray){
+																		FILE *fp=fopen("/tmp/gray.png","wb");
+																		PngInfo debugpnginfo;
+																		debugpnginfo.width=pnginfo.width;
+																		debugpnginfo.height=pnginfo.height;
+																		debugpnginfo.special=pnginfo.special;
+																		debugpnginfo.allocationsize=pnginfo.width*pnginfo.height;
+																		debugpnginfo.colortype=PNG_COLOR_TYPE_GRAY;
+																		debugpnginfo.bitdepth=8;
+																		debugpnginfo.interlace=0;
+																		debugpnginfo.compression=0;
+																		debugpnginfo.filter=0;
+																		debugpnginfo.rowsize=pnginfo.width;
+																		pngWrite(&debugpnginfo,grayimage,fp);
+																		fclose(fp);
 																	}
 
 																}
 																else{
-																	err("cuMemAlloc | grayimage!");
+																	errcuda("cuMemAlloc | grayimage!",ecode);
 																	goto jmp_SAFE_EXIT_GRAYIMAGE;
 																}
 																break;
@@ -370,8 +430,27 @@ int main(int argn,char **args){
 																	uint8_t *edgeimagedevice=malloc(sizeof(uint8_t)*pnginfo.width*pnginfo.height);
 																	if(edgeimagedevice){
 																		cuMemcpyDtoH(edgeimagedevice,binedge,sizeof(uint8_t)*pnginfo.width*pnginfo.height);
+																		
 																		// Don't need edgeimage anymore.
 																		cuMemFree(binedge);
+																		
+																		// If debugging the edge image is enabled write the edge image.
+																		if(debugflags.edge){
+																			FILE *fp=fopen("/tmp/edge.png","wb");
+																			PngInfo debugpnginfo;
+																			debugpnginfo.width=pnginfo.width;
+																			debugpnginfo.height=pnginfo.height;
+																			debugpnginfo.special=pnginfo.special;
+																			debugpnginfo.allocationsize=0;
+																			debugpnginfo.colortype=PNG_COLOR_TYPE_GRAY;
+																			debugpnginfo.bitdepth=8;
+																			debugpnginfo.interlace=0;
+																			debugpnginfo.compression=0;
+																			debugpnginfo.filter=0;
+																			debugpnginfo.rowsize=pnginfo.width;
+																			pngWriteHost(&debugpnginfo,(png_bytep)edgeimagedevice,fp);
+																			fclose(fp);
+																		}
 
 																		for(uint32_t x=0;x<pnginfo.width;x++){
 																			for(uint32_t y=0;y<pnginfo.height;y++){
@@ -430,46 +509,47 @@ int main(int argn,char **args){
 																								for(uint16_t angle=0;angle<angleticks;angle++){
 																									for(uint16_t radius=0;radius<radiusticks;radius++){
 																										if(accumulatorhost[radius*angleticks+angle]>peakthreas){
-
 																											hostlineparameters[peakcount++]=(angle<<16)+radius;
-
 																										}
 																									}
 																								}
 
 																								// Allocate memory for making lines images.
 																								CUdeviceptr lineparameters;
-																								if((ecode=cuMemAlloc(&lineparameters,sizeof(uint32_t)*peakcount))==CUDA_SUCCESS){
-																									cuMemcpyHtoD(lineparameters,hostlineparameters,sizeof(uint32_t)*peakcount);
-																									CUdeviceptr finalimage;
-																									if((ecode=cuMemAlloc(&finalimage,pnginfo.width*pnginfo.height))==CUDA_SUCCESS){
-																										cuMemsetD8(finalimage,0,pnginfo.width*pnginfo.height);
-																										// Give rendering information.
-																										{
-																											void *args[]={&lineparameters,&peakcount,&finalimage,&pnginfo.width,&pnginfo.height,&angled,&radiusd};
-																											ecode=cuLaunchKernel(renderlineskernel,peakcount/warpsize+(peakcount%warpsize>0),1,1,warpsize,1,1,0,0,args,0);
+																								if(peakcount>0){
+																									if((ecode=cuMemAlloc(&lineparameters,sizeof(uint32_t)*peakcount))==CUDA_SUCCESS){
+																										cuMemcpyHtoD(lineparameters,hostlineparameters,sizeof(uint32_t)*peakcount);
+																										CUdeviceptr finalimage;
+																										if((ecode=cuMemAlloc(&finalimage,pnginfo.width*pnginfo.height))==CUDA_SUCCESS){
+																											cuMemsetD8(finalimage,0,pnginfo.width*pnginfo.height);
+																											// Give rendering information.
+																											{
+																												void *args[]={&lineparameters,&peakcount,&finalimage,&pnginfo.width,&pnginfo.height,&angled,&radiusd};
+																												ecode=cuLaunchKernel(renderlineskernel,peakcount/warpsize+(peakcount%warpsize>0),1,1,warpsize,1,1,0,0,args,0);
+																											}
+																											if(ecode==CUDA_SUCCESS){
+
+																												// Make sure image to be written out is gray image with 8 bit channel.
+																												pnginfo.allocationsize=pnginfo.width*pnginfo.height;
+																												pnginfo.rowsize=pnginfo.width;
+																												pnginfo.colortype=PNG_COLOR_TYPE_GRAY;
+																												pnginfo.bitdepth=8;
+
+																												FILE *wfd=fopen("test.png","wb");
+																												pngWrite(&pnginfo,accumulator,wfd);
+																												fclose(wfd);
+
+																											}
+																											else errcuda("cuLaunchKernel | renderLines!",ecode);
+																											cuMemFree(finalimage);
 																										}
-																										if(ecode==CUDA_SUCCESS){
-
-																											// Make sure image to be written out is gray image with 8 bit channel.
-																											pnginfo.allocationsize=pnginfo.width*pnginfo.height;
-																											pnginfo.rowsize=pnginfo.width;
-																											pnginfo.colortype=PNG_COLOR_TYPE_GRAY;
-																											pnginfo.bitdepth=8;
-
-																											FILE *wfd=fopen("test.png","wb");
-																											pngWrite(&pnginfo,accumulator,wfd);
-																											fclose(wfd);
-
-																										}
-																										else errcuda("cuLaunchKernel | renderLines!",ecode);
-																										cuMemFree(finalimage);
+																										else errcuda("cuMemAlloc | finalimage!",ecode);
+																										cuMemFree(lineparameters);
 																									}
-																									else errcuda("cuMemAlloc | finalimage!",ecode);
-																									cuMemFree(lineparameters);
+																									else errcuda("cuMemAlloc | lineparameters!",ecode);
+																									free(hostlineparameters);
 																								}
-																								else errcuda("cuMemAlloc | lineparameters!",ecode);
-																								free(hostlineparameters);
+																								else msg(STDOUT_FILENO,"No edges found?");
 																							}
 																							else err("malloc failled!");
 																							free(accumulatorhost);

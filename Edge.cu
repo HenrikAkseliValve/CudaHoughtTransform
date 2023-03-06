@@ -50,12 +50,10 @@ __global__ void sobel(uint8_t * __restrict__ grayimage,uint8_t * __restrict__ bi
 		// Approximate strength is abs(dx)+abs(dy)
 		// which at biggest is 4*255+4*255=2040 so normalize
 		// threshold to it.
-		binaryout[yindex*width+xindex]=(abs(dx)+abs(dy)>2040*threshold);
+		binaryout[yindex*width+xindex]=(abs(dx)+abs(dy)>2040*threshold)*255;
 	}
 	else if(xindex==0 || yindex==0 || xindex==width || yindex==height)  binaryout[yindex*width+xindex]=0;
 }
 
-// Bullhock extern "C" end...
-// why can't there be option
-// to disable mangling...
+// Restart mangling.
 }
